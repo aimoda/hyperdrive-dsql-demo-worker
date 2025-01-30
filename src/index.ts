@@ -10,7 +10,6 @@ export interface Env {
   AWS_DSQL_ENDPOINT_PRIMARY: string;
   AWS_DSQL_ENDPOINT_SECONDARY: string;
   CLOUDFLARE_API_KEY_HYPERDRIVE: string;
-  CLOUDFLARE_API_KEY: string;
   CLOUDFLARE_ACCOUNT_ID: string;
 }
 
