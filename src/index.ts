@@ -2,187 +2,160 @@ import Cloudflare from 'cloudflare';
 import { AwsV4Signer } from "aws4fetch";
 
 export interface Env {
-    ENVIRONMENT: string;
-    AWS_DSQL_REGION_PRIMARY: string;
-    AWS_DSQL_REGION_SECONDARY: string;
-    AWS_DSQL_ACCESS_KEY_ID: string;
-    AWS_DSQL_SECRET_ACCESS_KEY: string;
-    AWS_DSQL_ENDPOINT_PRIMARY: string;
-    AWS_DSQL_ENDPOINT_SECONDARY: string;
-    CLOUDFLARE_API_KEY_HYPERDRIVE: string;
-    CLOUDFLARE_API_KEY: string;
-    CLOUDFLARE_ACCOUNT_ID: string;
+  ENVIRONMENT: string;
+  AWS_DSQL_REGION_PRIMARY: string;
+  AWS_DSQL_REGION_SECONDARY: string;
+  AWS_DSQL_ACCESS_KEY_ID: string;
+  AWS_DSQL_SECRET_ACCESS_KEY: string;
+  AWS_DSQL_ENDPOINT_PRIMARY: string;
+  AWS_DSQL_ENDPOINT_SECONDARY: string;
+  CLOUDFLARE_API_KEY_HYPERDRIVE: string;
+  CLOUDFLARE_API_KEY: string;
+  CLOUDFLARE_ACCOUNT_ID: string;
+}
+
+interface EndpointConfig {
+  configName: string;
+  host: string;
+  region: string;
+}
+
+interface HyperdriveOrigin {
+  scheme: "postgres" | "postgresql";
+  database: string;
+  user: string;
+  host: string;
+  port: number;
+  password: string;
 }
 
 /**
- * Generate a presigned “dsql” connection URL (minus the “https://” prefix)
- *
- * @param yourClusterEndpoint The domain portion of the cluster endpoint (e.g. "...dsql.us-east-1.on.aws")
- * @param region              The AWS Region (e.g. "us-east-1")
- * @param action              Either "DbConnectAdmin" or "DbConnect"
- * @param accessKeyId         Your AWS Access Key ID
- * @param secretAccessKey     Your AWS Secret Access Key
- * @param sessionToken        (Optional) Your AWS Session Token if using temporary credentials
- * @return                    The signed URL (minus the https:// prefix)
+ * Generate a presigned "dsql" connection URL (minus the "https://" prefix)
  */
 export async function generateDbConnectAdminAuthToken(
-    yourClusterEndpoint: string,
-    region: string,
-    action: string,
-    accessKeyId: string,
-    secretAccessKey: string,
-    sessionToken?: string
-  ): Promise<string> {
-    // Build the base URL (the scheme is included for signing; we’ll slice it off later)
-    const url = new URL(`https://${yourClusterEndpoint}`);
-  
-    // Add the required “Action” query parameter
-    url.searchParams.set('Action', action);
-  
-    url.searchParams.set('X-Amz-Expires', '604800'); // 1 week is the max accepted.
+  yourClusterEndpoint: string,
+  region: string,
+  action: string,
+  accessKeyId: string,
+  secretAccessKey: string,
+  sessionToken?: string
+): Promise<string> {
+  const url = new URL(`https://${yourClusterEndpoint}`);
+  url.searchParams.set('Action', action);
+  url.searchParams.set('X-Amz-Expires', '604800'); // 1 week is the max accepted.
 
-    // Create a signer that will produce a presigned URL in the query string
-    const signer = new AwsV4Signer({
-        url: url.toString(),
-        method: 'GET',
-        service: 'dsql',
-        region,
-        accessKeyId,
-        secretAccessKey,
-        sessionToken,
-        signQuery: true, // Important: this actually places the signature in the query string
+  const signer = new AwsV4Signer({
+    url: url.toString(),
+    method: 'GET',
+    service: 'dsql',
+    region,
+    accessKeyId,
+    secretAccessKey,
+    sessionToken,
+    signQuery: true, // puts the signature in the query string
+  });
+
+  const { url: signedUrl } = await signer.sign();
+  return signedUrl.toString().substring('https://'.length);
+}
+
+async function upsertConfig(
+  client: Cloudflare,
+  accountId: string,
+  endpoint: EndpointConfig,
+  existingConfig: any | undefined,
+  password: string
+) {
+  const origin: HyperdriveOrigin = {
+    scheme: 'postgres',
+    database: 'postgres',
+    user: 'admin',
+    host: endpoint.host,
+    port: 5432,
+    password,
+  };
+
+  if (existingConfig) {
+    console.log(`Found existing endpoint config "${endpoint.configName}" ... updating`);
+    const response = await client.hyperdrive.configs.edit(existingConfig.id, {
+      account_id: accountId,
+      origin,
     });
-  
-    // Sign and retrieve the final presigned URL
-    const { url: signedUrl } = await signer.sign();
-  
-    // Return everything after "https://"
-    return signedUrl.toString().substring('https://'.length);
+    console.log(`Updated configuration: ${endpoint.configName}`);
+    return response;
   }
 
-  export default {
-    async fetch(request: Request, env: Env, ctx: ExecutionContext) {
-        return new Response(null, {status: 404});
-    },
-    async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
-        console.debug("invoking cron");
+  console.log(`Creating configuration for endpoint "${endpoint.configName}"`);
+  const response = await client.hyperdrive.configs.create({
+    account_id: accountId,
+    name: endpoint.configName,
+    origin,
+  });
+  console.log(`Created new configuration: ${endpoint.configName}`);
+  return response;
+}
 
-        const client = new Cloudflare({
-            apiToken: env.CLOUDFLARE_API_KEY_HYPERDRIVE,
-        });
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    return new Response(null, { status: 404 });
+  },
 
-        const CONFIG_NAMES = {
-            PRIMARY: 'dsql-demo-primary',
-            SECONDARY: 'dsql-demo-secondary'
-        };
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    console.log("Starting Hyperdrive configuration update...");
 
-        // Track which configurations we find
-        let foundPrimary = false;
-        let foundSecondary = false;
+    const client = new Cloudflare({
+      apiToken: env.CLOUDFLARE_API_KEY_HYPERDRIVE,
+    });
 
-        // Collect all configs
-        for await (const config of client.hyperdrive.configs.list({
-            account_id: env.CLOUDFLARE_ACCOUNT_ID,
-        })) {
-            if (config.name === CONFIG_NAMES.PRIMARY) {
-                foundPrimary = true;
-                console.log(`Found primary endpoint configuration: ${config.name}`);
+    const endpoints: EndpointConfig[] = [
+      {
+        configName: "dsql-demo-primary",
+        host: env.AWS_DSQL_ENDPOINT_PRIMARY,
+        region: env.AWS_DSQL_REGION_PRIMARY,
+      },
+      {
+        configName: "dsql-demo-secondary",
+        host: env.AWS_DSQL_ENDPOINT_SECONDARY,
+        region: env.AWS_DSQL_REGION_SECONDARY,
+      },
+    ];
 
-                const password = await generateDbConnectAdminAuthToken(
-                    env.AWS_DSQL_ENDPOINT_PRIMARY,
-                    env.AWS_DSQL_REGION_PRIMARY,
-                    'DbConnectAdmin',
-                    env.AWS_DSQL_ACCESS_KEY_ID,
-                    env.AWS_DSQL_SECRET_ACCESS_KEY
-                );
-
-                const response = await client.hyperdrive.configs.edit(config.id, {
-                    account_id: env.CLOUDFLARE_ACCOUNT_ID,
-                    origin: {
-                        password: password,
-                        host: env.AWS_DSQL_ENDPOINT_PRIMARY,
-                        port: 5432,
-                    }
-                });
-                console.log(response);
-            }
-            if (config.name === CONFIG_NAMES.SECONDARY) {
-                foundSecondary = true;
-                console.log(`Found secondary endpoint configuration: ${config.name}`);
-
-                const password = await generateDbConnectAdminAuthToken(
-                    env.AWS_DSQL_ENDPOINT_SECONDARY,
-                    env.AWS_DSQL_REGION_SECONDARY,
-                    'DbConnectAdmin',
-                    env.AWS_DSQL_ACCESS_KEY_ID,
-                    env.AWS_DSQL_SECRET_ACCESS_KEY
-                );
-
-                const response = await client.hyperdrive.configs.edit(config.id, {
-                    account_id: env.CLOUDFLARE_ACCOUNT_ID,
-                    origin: {
-                        password: password,
-                        host: env.AWS_DSQL_ENDPOINT_SECONDARY,
-                        port: 5432,
-                    }
-                });
-                console.log(response);
-            }
-        }
-
-        // Check for missing configurations
-        if (!foundPrimary) {
-            console.log(`Creating configuration for primary endpoint: ${env.AWS_DSQL_ENDPOINT_PRIMARY}`);
-
-            const password = await generateDbConnectAdminAuthToken(
-                env.AWS_DSQL_ENDPOINT_PRIMARY,
-                env.AWS_DSQL_REGION_PRIMARY,
-                'DbConnectAdmin',
-                env.AWS_DSQL_ACCESS_KEY_ID,
-                env.AWS_DSQL_SECRET_ACCESS_KEY
-            );
-            const config = await client.hyperdrive.configs.create({
-                account_id: env.CLOUDFLARE_ACCOUNT_ID,
-                name: CONFIG_NAMES.PRIMARY,
-                origin: {
-                    database: 'postgres',
-                    host: env.AWS_DSQL_ENDPOINT_PRIMARY,
-                    password: password,
-                    port: 5432,
-                    scheme: 'postgres',
-                    user: 'admin',
-                },
-            });
-            console.debug(`Created primary configuration: ${config.name}`);
-        }
-
-        if (!foundSecondary) {
-            console.log(`Creating configuration for secondary endpoint: ${env.AWS_DSQL_ENDPOINT_SECONDARY}`);
-
-            const password = await generateDbConnectAdminAuthToken(
-                env.AWS_DSQL_ENDPOINT_SECONDARY,
-                env.AWS_DSQL_REGION_SECONDARY,
-                'DbConnectAdmin',
-                env.AWS_DSQL_ACCESS_KEY_ID,
-                env.AWS_DSQL_SECRET_ACCESS_KEY
-            );
-            const config = await client.hyperdrive.configs.create({
-                account_id: env.CLOUDFLARE_ACCOUNT_ID,
-                name: CONFIG_NAMES.SECONDARY,
-                origin: {
-                    database: 'postgres',
-                    host: env.AWS_DSQL_ENDPOINT_SECONDARY,
-                    password: password,
-                    port: 5432,
-                    scheme: 'postgres',
-                    user: 'admin',
-                },
-            });
-            console.debug(`Created secondary configuration: ${config.name}`);
-        }
-
-        if (foundPrimary && foundSecondary) {
-            console.log("All required endpoints are configured in Hyperdrive");
-        }
+    // 1) Collect all existing configs in one pass
+    console.log("Collecting existing configurations...");
+    const existingConfigs: Record<string, any> = {};
+    for await (const config of client.hyperdrive.configs.list({
+      account_id: env.CLOUDFLARE_ACCOUNT_ID,
+    })) {
+      existingConfigs[config.name] = config;
     }
+
+    // 2) Generate tokens in parallel
+    console.log("Generating authentication tokens...");
+    const tokenPromises = endpoints.map((ep) =>
+      generateDbConnectAdminAuthToken(
+        ep.host,
+        ep.region,
+        "DbConnectAdmin",
+        env.AWS_DSQL_ACCESS_KEY_ID,
+        env.AWS_DSQL_SECRET_ACCESS_KEY
+      )
+    );
+    const tokens = await Promise.all(tokenPromises);
+
+    // 3) Upsert configs in parallel
+    console.log("Updating Hyperdrive configurations...");
+    await Promise.all(
+      endpoints.map((ep, index) =>
+        upsertConfig(
+          client,
+          env.CLOUDFLARE_ACCOUNT_ID,
+          ep,
+          existingConfigs[ep.configName],
+          tokens[index]
+        )
+      )
+    );
+
+    console.log("Hyperdrive configuration update complete!");
+  },
 };
