@@ -87,10 +87,46 @@ export async function generateDbConnectAdminAuthToken(
             if (config.name === CONFIG_NAMES.PRIMARY) {
                 foundPrimary = true;
                 console.log(`Found primary endpoint configuration: ${config.name}`);
+
+                const password = await generateDbConnectAdminAuthToken(
+                    env.AWS_DSQL_ENDPOINT_PRIMARY,
+                    env.AWS_DSQL_REGION_PRIMARY,
+                    'DbConnectAdmin',
+                    env.AWS_DSQL_ACCESS_KEY_ID,
+                    env.AWS_DSQL_SECRET_ACCESS_KEY
+                );
+
+                const response = await client.hyperdrive.configs.edit(config.id, {
+                    account_id: env.CLOUDFLARE_ACCOUNT_ID,
+                    origin: {
+                        password: password,
+                        host: env.AWS_DSQL_ENDPOINT_PRIMARY,
+                        port: 5432,
+                    }
+                });
+                console.log(response);
             }
             if (config.name === CONFIG_NAMES.SECONDARY) {
                 foundSecondary = true;
                 console.log(`Found secondary endpoint configuration: ${config.name}`);
+
+                const password = await generateDbConnectAdminAuthToken(
+                    env.AWS_DSQL_ENDPOINT_SECONDARY,
+                    env.AWS_DSQL_REGION_SECONDARY,
+                    'DbConnectAdmin',
+                    env.AWS_DSQL_ACCESS_KEY_ID,
+                    env.AWS_DSQL_SECRET_ACCESS_KEY
+                );
+
+                const response = await client.hyperdrive.configs.edit(config.id, {
+                    account_id: env.CLOUDFLARE_ACCOUNT_ID,
+                    origin: {
+                        password: password,
+                        host: env.AWS_DSQL_ENDPOINT_SECONDARY,
+                        port: 5432,
+                    }
+                });
+                console.log(response);
             }
         }
 
