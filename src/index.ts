@@ -60,7 +60,7 @@ export async function generateDbConnectAdminAuthToken(
     return signedUrl.toString().substring('https://'.length);
   }
 
-export default {
+  export default {
     async fetch(request: Request, env: Env, ctx: ExecutionContext) {
         return new Response(null, {status: 404});
     },
@@ -71,7 +71,12 @@ export default {
             apiToken: env.CLOUDFLARE_API_KEY_HYPERDRIVE,
         });
 
-        // Track which endpoints we find
+        const CONFIG_NAMES = {
+            PRIMARY: 'dsql-demo-primary',
+            SECONDARY: 'dsql-demo-secondary'
+        };
+
+        // Track which configurations we find
         let foundPrimary = false;
         let foundSecondary = false;
 
@@ -79,11 +84,11 @@ export default {
         for await (const config of client.hyperdrive.configs.list({
             account_id: env.CLOUDFLARE_ACCOUNT_ID,
         })) {
-            if (config.origin.host === env.AWS_DSQL_ENDPOINT_PRIMARY) {
+            if (config.name === CONFIG_NAMES.PRIMARY) {
                 foundPrimary = true;
                 console.log(`Found primary endpoint configuration: ${config.name}`);
             }
-            if (config.origin.host === env.AWS_DSQL_ENDPOINT_SECONDARY) {
+            if (config.name === CONFIG_NAMES.SECONDARY) {
                 foundSecondary = true;
                 console.log(`Found secondary endpoint configuration: ${config.name}`);
             }
@@ -91,7 +96,7 @@ export default {
 
         // Check for missing configurations
         if (!foundPrimary) {
-            console.log(`TODO: Need to create configuration for primary endpoint: ${env.AWS_DSQL_ENDPOINT_PRIMARY}`);
+            console.log(`Creating configuration for primary endpoint: ${env.AWS_DSQL_ENDPOINT_PRIMARY}`);
 
             const password = await generateDbConnectAdminAuthToken(
                 env.AWS_DSQL_ENDPOINT_PRIMARY,
@@ -102,7 +107,7 @@ export default {
             );
             const config = await client.hyperdrive.configs.create({
                 account_id: env.CLOUDFLARE_ACCOUNT_ID,
-                name: 'dsql-demo-primary',
+                name: CONFIG_NAMES.PRIMARY,
                 origin: {
                     database: 'postgres',
                     host: env.AWS_DSQL_ENDPOINT_PRIMARY,
@@ -112,10 +117,32 @@ export default {
                     user: 'admin',
                 },
             });
-            console.debug(config);
+            console.debug(`Created primary configuration: ${config.name}`);
         }
+
         if (!foundSecondary) {
-            console.log(`TODO: Need to create configuration for secondary endpoint: ${env.AWS_DSQL_ENDPOINT_SECONDARY}`);
+            console.log(`Creating configuration for secondary endpoint: ${env.AWS_DSQL_ENDPOINT_SECONDARY}`);
+
+            const password = await generateDbConnectAdminAuthToken(
+                env.AWS_DSQL_ENDPOINT_SECONDARY,
+                env.AWS_DSQL_REGION_SECONDARY,
+                'DbConnectAdmin',
+                env.AWS_DSQL_ACCESS_KEY_ID,
+                env.AWS_DSQL_SECRET_ACCESS_KEY
+            );
+            const config = await client.hyperdrive.configs.create({
+                account_id: env.CLOUDFLARE_ACCOUNT_ID,
+                name: CONFIG_NAMES.SECONDARY,
+                origin: {
+                    database: 'postgres',
+                    host: env.AWS_DSQL_ENDPOINT_SECONDARY,
+                    password: password,
+                    port: 5432,
+                    scheme: 'postgres',
+                    user: 'admin',
+                },
+            });
+            console.debug(`Created secondary configuration: ${config.name}`);
         }
 
         if (foundPrimary && foundSecondary) {
