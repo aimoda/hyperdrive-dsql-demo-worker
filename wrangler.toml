@@ -28,6 +28,7 @@ AWS_DSQL_REGION_SECONDARY = "us-east-1"
 # wrangler secret put -e production AWS_DSQL_ENDPOINT_PRIMARY
 # wrangler secret put -e production AWS_DSQL_ENDPOINT_SECONDARY
 # wrangler secret put -e production CLOUDFLARE_API_KEY_HYPERDRIVE
+# wrangler secret put -e production CLOUDFLARE_ACCOUNT_ID
 
 [env.production.triggers]
 crons = [ "30 15 * * *" ]

@@ -13,6 +13,7 @@
     "wrangler": "^3.107.0"
   },
   "dependencies": {
-    "aws4fetch": "^1.0.20"
+    "aws4fetch": "^1.0.20",
+    "cloudflare": "^4.0.0"
   }
 }
