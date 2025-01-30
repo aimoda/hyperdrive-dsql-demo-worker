@@ -1,0 +1,88 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AllowDSQLAccess",
+            "Effect": "Allow",
+            "Action": [
+                "dsql:DbConnectAdmin",
+                "dsql:DbConnect"
+            ],
+            "Resource": [
+                "arn:aws:dsql:us-east-2:REMOVED:cluster/REMOVED",
+                "arn:aws:dsql:us-east-1:REMOVED:cluster/REMOVED"
+            ]
+        },
+        {
+            "Sid": "DenyAccessOutsideUS",
+            "Effect": "Deny",
+            "Action": "*",
+            "Resource": "*",
+            "Condition": {
+                "StringNotEquals": {
+                    "aws:RequestedRegion": [
+                        "us-east-1",
+                        "us-east-2",
+                        "us-west-1",
+                        "us-west-2"
+                    ]
+                }
+            }
+        },
+        {
+            "Sid": "DenyInsecureTransport",
+            "Effect": "Deny",
+            "Action": "*",
+            "Resource": "*",
+            "Condition": {
+                "Bool": {
+                    "aws:SecureTransport": "false"
+                }
+            }
+        },
+        {
+            "Sid": "DenyViaAWSService",
+            "Effect": "Deny",
+            "Action": "*",
+            "Resource": "*",
+            "Condition": {
+                "Bool": {
+                    "aws:ViaAWSService": "true"
+                }
+            }
+        },
+        {
+            "Sid": "DenyWhenCalledViaExists",
+            "Effect": "Deny",
+            "Action": "*",
+            "Resource": "*",
+            "Condition": {
+                "Null": {
+                    "aws:CalledVia": "false"
+                }
+            }
+        },
+        {
+            "Sid": "DenyWhenCalledViaFirstExists",
+            "Effect": "Deny",
+            "Action": "*",
+            "Resource": "*",
+            "Condition": {
+                "Null": {
+                    "aws:CalledViaFirst": "false"
+                }
+            }
+        },
+        {
+            "Sid": "DenyWhenCalledViaLastExists",
+            "Effect": "Deny",
+            "Action": "*",
+            "Resource": "*",
+            "Condition": {
+                "Null": {
+                    "aws:CalledViaLast": "false"
+                }
+            }
+        }
+    ]
+    }

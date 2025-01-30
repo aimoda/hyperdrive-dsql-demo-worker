@@ -1,0 +1,37 @@
+name = "hyperdrive-dsql-demo-worker-dev"
+main = "src/index.ts"
+compatibility_date = "2024-11-11"
+minify = true
+workers_dev = false
+
+[dev]
+ip = "localhost"
+local_protocol = "http"
+port = 60345
+
+[vars]
+ENVIRONMENT = "dev"
+AWS_DSQL_REGION_PRIMARY = "us-east-2"
+AWS_DSQL_REGION_SECONDARY = "us-east-1"
+
+[env.production]
+name = "hyperdrive-dsql-demo-worker"
+logpush = true
+
+[env.production.vars]
+ENVIRONMENT = "production"
+AWS_DSQL_REGION_PRIMARY = "us-east-2"
+AWS_DSQL_REGION_SECONDARY = "us-east-1"
+
+# wrangler secret put -e production AWS_DSQL_ACCESS_KEY_ID
+# wrangler secret put -e production AWS_DSQL_SECRET_ACCESS_KEY
+# wrangler secret put -e production AWS_DSQL_ENDPOINT_PRIMARY
+# wrangler secret put -e production AWS_DSQL_ENDPOINT_SECONDARY
+# wrangler secret put -e production CLOUDFLARE_API_KEY_HYPERDRIVE
+
+[env.production.triggers]
+crons = [ "30 15 * * *" ]
+
+[env.production.observability]
+enabled = true
+head_sampling_rate = 1
