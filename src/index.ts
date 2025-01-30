@@ -190,12 +190,12 @@ export default {
      */
     const endpoints: EndpointConfig[] = [
       {
-        configName: "dsql-demo-primary",
+        configName: "dsql-admin-demo-primary",
         host: env.AWS_DSQL_ENDPOINT_PRIMARY,
         region: env.AWS_DSQL_REGION_PRIMARY,
       },
       {
-        configName: "dsql-demo-secondary",
+        configName: "dsql-admin-demo-secondary",
         host: env.AWS_DSQL_ENDPOINT_SECONDARY,
         region: env.AWS_DSQL_REGION_SECONDARY,
       },
