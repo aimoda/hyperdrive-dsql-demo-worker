@@ -97,7 +97,7 @@ export async function generateDbConnectAdminAuthToken(
   const { url: signedUrl } = await signer.sign();
   console.log("[generateDbConnectAdminAuthToken] Signed URL obtained");
 
-  // Return the signed URL, but remove the "https://" prefix because Hyperdrive expects just the host + query params.
+  // Return the signed URL, but remove the "https://" prefix because AWS expects just the host + query params.
   const trimmedUrl = signedUrl.toString().substring('https://'.length);
   console.log(`[generateDbConnectAdminAuthToken] Trimmed token (used as password): ${trimmedUrl.substring(0, 5)}...`);
 
