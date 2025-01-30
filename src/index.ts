@@ -120,16 +120,7 @@ export default {
       },
     ];
 
-    // 1) Collect all existing configs in one pass
-    console.log("Collecting existing configurations...");
-    const existingConfigs: Record<string, any> = {};
-    for await (const config of client.hyperdrive.configs.list({
-      account_id: env.CLOUDFLARE_ACCOUNT_ID,
-    })) {
-      existingConfigs[config.name] = config;
-    }
-
-    // 2) Generate tokens in parallel
+    // Generate tokens in parallel
     console.log("Generating authentication tokens...");
     const tokenPromises = endpoints.map((ep) =>
       generateDbConnectAdminAuthToken(
@@ -140,9 +131,18 @@ export default {
         env.AWS_DSQL_SECRET_ACCESS_KEY
       )
     );
+
+    // Collect all existing configs in one pass
+    console.log("Collecting existing configurations...");
+    const existingConfigs: Record<string, any> = {};
+    for await (const config of client.hyperdrive.configs.list({
+      account_id: env.CLOUDFLARE_ACCOUNT_ID,
+    })) {
+      existingConfigs[config.name] = config;
+    }
     const tokens = await Promise.all(tokenPromises);
 
-    // 3) Upsert configs in parallel
+    // Upsert configs in parallel
     console.log("Updating Hyperdrive configurations...");
     await Promise.all(
       endpoints.map((ep, index) =>
